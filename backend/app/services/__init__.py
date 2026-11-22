@@ -21,6 +21,8 @@ from app.services.task_scheduler import TaskSchedulerService
 from app.services.alert_rule import AlertRuleService
 from app.services.cost_report import CostReportService
 from app.services.lineage_graph import LineageGraphService
+from app.services.affected_table import AffectedTableService
+from app.services.review_record import ReviewRecordService
 from app.services.govern_report import GovernReportService
 
 SERVICES: dict[str, BaseModuleService] = {
@@ -43,6 +45,8 @@ SERVICES: dict[str, BaseModuleService] = {
     "alert_rule": AlertRuleService(),
     "cost_report": CostReportService(),
     "lineage_graph": LineageGraphService(),
+    "affected_table": AffectedTableService(),
+    "review_record": ReviewRecordService(),
     "govern_report": GovernReportService(),
 }
 

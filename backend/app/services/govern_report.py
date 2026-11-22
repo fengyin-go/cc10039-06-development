@@ -114,7 +114,12 @@ class GovernReportService(BaseModuleService):
         )
 
     def execute_optimization(self, entry_id: int) -> tuple[dict[str, Any] | None, str]:
-        """执行治理优化：根据报告建议触发实际的治理操作。"""
+        """执行治理优化：根据报告建议触发实际的治理操作。
+
+        依据受影响湖表视图里的可达路径投递复核项目：值班员点开复核记录即可
+        看到输入版本与具体要检查的下游湖表；同一湖表多路汇入时只写一条记录，
+        记录内保留所有相关路径。
+        """
         entry = store.find(self.MODULE, entry_id)
         if entry is None:
             return None, "治理报告不存在"
@@ -135,18 +140,44 @@ class GovernReportService(BaseModuleService):
             if qr.get("status") == "已启用":
                 qr["pending"] = True
 
+        # 依据受影响湖表视图生成实际复核项目（按目标湖表去重）
+        from app.services.affected_table import AffectedTableService
+        from app.services.review_record import ReviewRecordService
+
+        affected_svc = AffectedTableService()
+        review_svc = ReviewRecordService()
+        # 执行前先按当前核对过的血缘关系重算视图，保证投递范围最新
+        affected_svc.rebuild_affected_view()
+        scope = affected_svc.review_scope()
+        batch = datetime.datetime.now().strftime("%Y%m%d%H%M")
+        created, merged = review_svc.submit_from_scope(scope, batch, entry_id)
+
+        affected_tables = sorted(scope)
         entry["status"] = "已执行"
         entry["pending"] = False
         entry["abnormal"] = False
         entry["执行状态"] = "优化已执行"
+        entry["本次复核范围"] = affected_tables
+        entry["复核批次"] = batch
+        entry["新增复核记录"] = len(created)
+        entry["去重合并记录"] = len(merged)
 
         store.log_event("govern_optimization_executed", "govern_report", "govern_report", {
             "report_id": entry_id,
             "broken_lineages_triggered": len(broken_lineages),
             "quality_rules_retriggered": len(quality_rules),
+            "review_batch": batch,
+            "review_targets": affected_tables,
+            "review_created": len(created),
+            "review_merged": len(merged),
         })
 
-        return entry, f"治理优化已执行：触发 {len(broken_lineages)} 条血缘修复、{len(quality_rules)} 个质量规则"
+        return entry, (
+            f"治理优化已执行：触发 {len(broken_lineages)} 条血缘修复、"
+            f"{len(quality_rules)} 个质量规则；投递复核项目 {len(created)} 条"
+            + (f"，去重合并 {len(merged)} 条" if merged else "")
+            + f"，覆盖湖表 {len(affected_tables)} 张"
+        )
 
     def run_action(self, entry_id: int, action: str) -> tuple[dict[str, Any] | None, str]:
         if action == "生成报告":
